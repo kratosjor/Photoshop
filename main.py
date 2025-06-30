@@ -4,12 +4,11 @@ import win32com.client
 
 # Rutas
 RUTA_PLANTILLA = r"C:\Users\Jordan\Desktop\Cursos Programacion\Photoshop\plantilla.psd"
-TEMP_DOC_PATH = r"C:\Users\Jordan\Desktop\temp_documento.psd"
 
 # Capas agrupadas por categoría, con brush opcional
 capas_por_categoria = {
     "Floorplan": {
-        "Walls": "Ductwork",
+        "Walls": "Walls",
         "Floor": "Floor",
         "Lower_Level": None,
         "1_line_ Details": "Stairs/Elevetors/End Caps"
@@ -38,7 +37,6 @@ capas_por_categoria = {
     }
 }
 
-# Función para duplicar capa y aplicar pincel
 def duplicar_capa_y_brush(nombre_capa, brush_name):
     try:
         psApp = win32com.client.Dispatch("Photoshop.Application")
@@ -50,26 +48,18 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
 
         docDestino = psApp.ActiveDocument
 
-        # Si el documento activo no está guardado, guárdalo temporalmente
-        try:
-            _ = docDestino.FullName.fsName
-        except AttributeError:
-            save_options = win32com.client.Dispatch("Photoshop.PhotoshopSaveOptions")
-            docDestino.SaveAs(TEMP_DOC_PATH, save_options, True)
+        # Ya no se guarda documento temporal ni se verifica ruta
 
-        # Desactivar diálogos (para evitar aviso de perfil de color)
+        # Desactivar diálogos (evitar aviso de perfil de color)
         psApp.DisplayDialogs = 3  # DisplayDialogs.NEVER
 
-        # Abrir plantilla
         plantilla_doc = psApp.Open(RUTA_PLANTILLA)
 
-        # Restaurar comportamiento de diálogos
         psApp.DisplayDialogs = 1  # DisplayDialogs.ALL
 
-        # Intentar duplicar capa
         try:
             capa = plantilla_doc.ArtLayers.Item(nombre_capa)
-            capa.Duplicate(docDestino, 2)  # 2 = PlaceInFront
+            capa.Duplicate(docDestino, 2)  # PlaceInFront
         except Exception:
             messagebox.showerror("Error", f"No se encontró la capa '{nombre_capa}' en plantilla.")
             plantilla_doc.Close(2)
@@ -77,7 +67,6 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
 
         plantilla_doc.Close(2)
 
-        # Seleccionar pincel si se asignó uno
         if brush_name:
             jsx_code = f"""
             var brushName = "{brush_name}";
@@ -96,7 +85,7 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo conectar o manipular Photoshop:\n{e}")
 
-# Crear interfaz
+# GUI
 root = tk.Tk()
 root.title("Importar capas desde plantilla.psd")
 
@@ -129,7 +118,6 @@ def toggle_botones():
         toggle_btn.config(text="Mostrar capas disponibles")
         botones_visibles = False
 
-# Botón principal
 toggle_btn = tk.Button(root, text="Mostrar capas disponibles", command=toggle_botones)
 toggle_btn.pack(padx=20, pady=20)
 

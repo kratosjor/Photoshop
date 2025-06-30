@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 import win32com.client
 
-# Rutas
+# Ruta plantilla
 RUTA_PLANTILLA = r"C:\Users\Jordan\Desktop\Cursos Programacion\Photoshop\plantilla.psd"
 
 # Capas agrupadas por categoría, con brush opcional
@@ -33,7 +33,8 @@ capas_por_categoria = {
         "Border_keymap": None,
         "Selected Area": None,
         "floor_menu": None,
-        "Border": None
+        "Border": None,
+        "Non_Selectable": None,
     }
 }
 
@@ -48,24 +49,25 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
 
         docDestino = psApp.ActiveDocument
 
-        # Ya no se guarda documento temporal ni se verifica ruta
-
-        # Desactivar diálogos (evitar aviso de perfil de color)
-        psApp.DisplayDialogs = 3  # DisplayDialogs.NEVER
+        # Evitar que Photoshop muestre diálogos al abrir o duplicar
+        display_dialog_backup = psApp.DisplayDialogs
+        psApp.DisplayDialogs = 3  # NEVER
 
         plantilla_doc = psApp.Open(RUTA_PLANTILLA)
 
-        psApp.DisplayDialogs = 1  # DisplayDialogs.ALL
-
         try:
             capa = plantilla_doc.ArtLayers.Item(nombre_capa)
-            capa.Duplicate(docDestino, 2)  # PlaceInFront
+            capa.Duplicate(docDestino, 2)  # Duplicar automáticamente delante
         except Exception:
             messagebox.showerror("Error", f"No se encontró la capa '{nombre_capa}' en plantilla.")
             plantilla_doc.Close(2)
+            psApp.DisplayDialogs = display_dialog_backup
             return
 
         plantilla_doc.Close(2)
+
+        # Restaurar diálogo
+        psApp.DisplayDialogs = display_dialog_backup
 
         if brush_name:
             jsx_code = f"""
@@ -85,7 +87,7 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo conectar o manipular Photoshop:\n{e}")
 
-# GUI
+# GUI Tkinter
 root = tk.Tk()
 root.title("Importar capas desde plantilla.psd")
 

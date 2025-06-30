@@ -1,9 +1,19 @@
 import tkinter as tk
 from tkinter import messagebox
 import win32com.client
+import os
+import sys
 
-# Ruta plantilla
-RUTA_PLANTILLA = r"C:\Users\Jordan\Desktop\Cursos Programacion\Photoshop\plantilla.psd"
+# Ruta relativa a plantilla.psd compatible con PyInstaller
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS  # Cuando está empaquetado
+    except AttributeError:
+        base_path = os.path.abspath(".")  # Cuando se ejecuta como .py
+    return os.path.join(base_path, relative_path)
+
+# Ruta plantilla PSD
+RUTA_PLANTILLA = resource_path("plantilla.psd")
 
 # Capas agrupadas por categoría, con brush opcional
 capas_por_categoria = {
@@ -49,7 +59,6 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
 
         docDestino = psApp.ActiveDocument
 
-        # Evitar que Photoshop muestre diálogos al abrir o duplicar
         display_dialog_backup = psApp.DisplayDialogs
         psApp.DisplayDialogs = 3  # NEVER
 
@@ -57,7 +66,7 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
 
         try:
             capa = plantilla_doc.ArtLayers.Item(nombre_capa)
-            capa.Duplicate(docDestino, 2)  # Duplicar automáticamente delante
+            capa.Duplicate(docDestino, 2)
         except Exception:
             messagebox.showerror("Error", f"No se encontró la capa '{nombre_capa}' en plantilla.")
             plantilla_doc.Close(2)
@@ -65,8 +74,6 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
             return
 
         plantilla_doc.Close(2)
-
-        # Restaurar diálogo
         psApp.DisplayDialogs = display_dialog_backup
 
         if brush_name:

@@ -3,8 +3,16 @@ from tkinter import messagebox, filedialog
 import win32com.client
 import os
 import sys
+import datetime
+import shutil
+from tkinter import simpledialog
+
+
+#######################################
+
 
 # Para compatibilidad con PyInstaller
+#buscara los archivos templates necesarios
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -15,6 +23,7 @@ def resource_path(relative_path):
 # Rutas de recursos
 RUTA_PLANTILLA = resource_path("plantilla.psd")
 RUTA_ABR = resource_path("Trane_Brushes.abr")
+RUTA_SENSORES = resource_path("sensores")
 
 # Capas por categoría
 capas_por_categoria = {
@@ -176,6 +185,274 @@ def importar_imagenes_como_capas():
     except Exception as e:
         messagebox.showerror("Error", f"No se pudieron importar imágenes:\n{e}")
 
+#########################################################################
+# Exportar a HTML con opciones
+#########################################################################
+
+def exportar_completo(tipo_html="SC", exportar_html=True):
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog, messagebox
+        import win32com.client
+        import os, shutil, datetime
+
+        RUTA_SENSORES = resource_path("sensores")
+        psApp = win32com.client.Dispatch("Photoshop.Application")
+
+        if psApp.Documents.Count == 0:
+            messagebox.showerror("Error", "No hay documento abierto.")
+            return
+
+        doc = psApp.ActiveDocument
+        if not doc.FullName:
+            messagebox.showerror("Error", "Debes guardar el documento PSD primero.")
+            return
+
+        ruta_psd = doc.FullName
+        carpeta_base = os.path.dirname(ruta_psd)
+        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Detectar grupo seleccionado
+        nombre_grupo_original = psApp.DoJavaScript("""
+        var sel = app.activeDocument.activeLayer;
+        while (sel.parent != app.activeDocument) {
+            sel = sel.parent;
+        }
+        sel.name;
+        """)
+
+        # Pedir nombre de exportación
+        root = tk.Tk()
+        root.withdraw()
+        nombre_export = simpledialog.askstring(
+            "Nombre de exportación",
+            f"Grupo seleccionado: {nombre_grupo_original}\n\nIngrese nombre para exportar (ej: piso_1_cliente):"
+        )
+        if not nombre_export:
+            messagebox.showwarning("Cancelado", "Exportación cancelada por el usuario.")
+            return
+        nombre_export = nombre_export.strip()
+
+        # Crear carpetas base según tipo
+        nombre_carpeta_base = f"floorplans_{tipo_html}"
+        carpeta_floorplans = os.path.join(carpeta_base, nombre_carpeta_base)
+
+        # Crear subcarpetas HVAC y No-HVAC
+        carpeta_hvac = os.path.join(carpeta_floorplans, f"{nombre_export}_HVAC")
+        carpeta_arch = os.path.join(carpeta_floorplans, f"{nombre_export}_No-HVAC")
+
+        # Crear carpetas si no existen
+        os.makedirs(carpeta_hvac, exist_ok=True)
+        os.makedirs(carpeta_arch, exist_ok=True)
+
+
+        options = win32com.client.Dispatch('Photoshop.ExportOptionsSaveForWeb')
+        options.Format = 13
+        options.PNG8 = False
+        options.Transparency = True
+        options.Quality = 100
+
+        def crear_html(ruta_destino, nombre_imagen):
+            sensores_html = """
+            <img class="sensor" src="Temp_Sensor.png" style="top:203px;left:33px;"/>
+            <img class="sensor" src="Sensor.png" style="top:179px;left:33px;z-index:101;"/>
+            <img class="sensor" src="C02_Sensor.png" style="top:254px;left:33px;z-index:102;"/>
+            <img class="sensor" src="Humidity_Sensor.png" style="top:227px;left:33px;z-index:103;"/>
+            """
+            nav_overlay = '<div class="nav-overlay">[ES Navigation Controls]</div>' if tipo_html == "ES" else ""
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>{nombre_export} - {tipo_html}</title>
+    <meta name="CGFVersion" content="4.0"/>
+    <meta name="Description" content="Exported Graphic"/>
+    <meta name="Template" content="false"/>
+    <meta name="CreationTime" content="{fecha_actual}"/>
+    <meta name="ModificationTime" content="{fecha_actual}"/>
+    <meta name="{tipo_html}Version" content=""/>
+    <meta name="TGEVersion" content="Centralized Services Graphics"/>
+    <meta name="ScrollLength" content="788"/>
+    <meta name="ScrollWidth" content="1613"/>
+    <style>
+        body {{ margin: 0; padding: 0; background-color: #333; overflow: hidden; }}
+        .hvac-container {{ position: relative; height: 788px; width: 1613px; }}
+        .hvac-main {{ position: absolute; top: 0; left: 0; z-index: 12; }}
+        .sensor {{ position: absolute; height: 22px; width: 22px; z-index: 100; }}
+        .nav-overlay {{ position: absolute; top: 10px; right: 10px; z-index: 200; }}
+    </style>
+</head>
+<body>
+    <div class="hvac-container">
+        <img class="hvac-main" src="{nombre_imagen}" alt="HVAC System"/>
+        {sensores_html}
+        {nav_overlay}
+    </div>
+</body>
+</html>"""
+            with open(os.path.join(ruta_destino, f"{nombre_export}_{tipo_html}.html"), "w", encoding="utf-8") as f:
+                f.write(html)
+
+        # Export HVAC (HVAC + ARCH visibles)
+        psApp.DoJavaScript(f"""
+        var doc = app.activeDocument;
+        for (var i = 0; i < doc.layerSets.length; i++) {{
+            doc.layerSets[i].visible = false;
+        }}
+        var grupo = doc.layerSets.getByName("{nombre_grupo_original}");
+        grupo.visible = true;
+        for (var j = 0; j < grupo.layerSets.length; j++) {{
+            grupo.layerSets[j].visible = true;
+        }}
+        """)
+        ruta_hvac_img = os.path.join(carpeta_hvac, f"{nombre_export}.png")
+        doc.Export(ExportIn=ruta_hvac_img, ExportAs=2, Options=options)
+        crear_html(carpeta_hvac, os.path.basename(ruta_hvac_img))
+
+        # Export ARCH (solo ARCH visible)
+        psApp.DoJavaScript(f"""
+        var doc = app.activeDocument;
+        for (var i = 0; i < doc.layerSets.length; i++) {{
+            doc.layerSets[i].visible = false;
+        }}
+        var grupo = doc.layerSets.getByName("{nombre_grupo_original}");
+        grupo.visible = true;
+        for (var j = 0; j < grupo.layerSets.length; j++) {{
+            grupo.layerSets[j].visible = false;
+            if (grupo.layerSets[j].name == "ARCH") {{
+                grupo.layerSets[j].visible = true;
+            }}
+        }}
+        """)
+        ruta_arch_img = os.path.join(carpeta_arch, f"{nombre_export}_ARCH.png")
+        doc.Export(ExportIn=ruta_arch_img, ExportAs=2, Options=options)
+        crear_html(carpeta_arch, os.path.basename(ruta_arch_img))
+
+        # Copiar sensores
+        sensores = ["Temp_Sensor.png", "Sensor.png", "C02_Sensor.png", "Humidity_Sensor.png"]
+        for carpeta_dest in [carpeta_hvac, carpeta_arch]:
+            for sensor in sensores:
+                origen = os.path.join(RUTA_SENSORES, sensor)
+                if os.path.exists(origen):
+                    shutil.copy2(origen, os.path.join(carpeta_dest, sensor))
+
+        # Restaurar visibilidad
+        psApp.DoJavaScript("""
+        var doc = app.activeDocument;
+        for (var i = 0; i < doc.layerSets.length; i++) {
+            doc.layerSets[i].visible = true;
+        }
+        """)
+
+        # Mensaje final
+        messagebox.showinfo("Exportación finalizada",
+            f"Exportación completa:\n\nHVAC: {carpeta_hvac}\nNo-HVAC: {carpeta_arch}"
+        )
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Error durante la exportación:\n\n{str(e)}")
+
+
+###########################################################################
+#exportacion isolate
+##$###########################################################################
+def exportar_isolate_folder():
+    try:
+        psApp = win32com.client.Dispatch("Photoshop.Application")
+
+        if psApp.Documents.Count == 0:
+            messagebox.showerror("Error", "No hay documento abierto.")
+            return
+
+        doc = psApp.ActiveDocument
+        if not doc.FullName:
+            messagebox.showerror("Error", "Debes guardar el documento PSD primero.")
+            return
+
+        ruta_psd = doc.FullName
+        carpeta_base = os.path.dirname(ruta_psd)
+        carpeta_floorplans = os.path.join(carpeta_base, "floorplans")
+        os.makedirs(carpeta_floorplans, exist_ok=True)
+
+        nombre_default = os.path.splitext(os.path.basename(ruta_psd))[0]
+
+        # Pedir nombre de exportación
+        root = tk.Tk()
+        root.withdraw()
+        nombre_export = simpledialog.askstring(
+            "Nombre de exportación (solo carpeta)",
+            f"Ingrese el nombre para la carpeta (vacío usa '{nombre_default}'):"
+        )
+        if nombre_export is None:
+            return
+        nombre_export = nombre_export.strip() or nombre_default
+
+        carpeta_export = os.path.join(carpeta_floorplans, nombre_export)
+        os.makedirs(carpeta_export, exist_ok=True)
+
+        options = win32com.client.Dispatch('Photoshop.ExportOptionsSaveForWeb')
+        options.Format = 13  # PNG
+        options.PNG8 = False
+        options.Transparency = True
+        options.Quality = 100
+
+        # Exportar TODO visible (sin esconder nada, no usar grupos)
+        # O si quieres exportar solo un grupo específico, pregunta aquí
+
+        # Por ejemplo, vamos a exportar solo las capas visibles (sin cambiar visibilidad de grupos)
+        nombre_imagen = f"{nombre_export}.png"
+        ruta_imagen = os.path.join(carpeta_export, nombre_imagen)
+
+        doc.Export(ExportIn=ruta_imagen, ExportAs=2, Options=options)
+
+        # Crear HTML simple con la imagen exportada
+        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        html_file = os.path.join(carpeta_export, f"{nombre_export}.html")
+
+        sensores_html = """
+        <img class="sensor" src="Temp_Sensor.png" style="top:203px;left:33px;"/>
+        <img class="sensor" src="Sensor.png" style="top:179px;left:33px;z-index:101;"/>
+        <img class="sensor" src="C02_Sensor.png" style="top:254px;left:33px;z-index:102;"/>
+        <img class="sensor" src="Humidity_Sensor.png" style="top:227px;left:33px;z-index:103;"/>
+        """
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>{nombre_export}</title>
+    <meta name="CreationTime" content="{fecha_actual}"/>
+    <style>
+        body {{ margin: 0; padding: 0; background-color: #333; overflow: hidden; }}
+        .hvac-container {{ position: relative; height: 788px; width: 1613px; }}
+        .hvac-main {{ position: absolute; top: 0; left: 0; z-index: 12; }}
+        .sensor {{ position: absolute; height: 22px; width: 22px; z-index: 100; }}
+    </style>
+</head>
+<body>
+    <div class="hvac-container">
+        <img class="hvac-main" src="{nombre_imagen}" alt="Imagen exportada"/>
+        {sensores_html}
+    </div>
+</body>
+</html>
+"""
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+
+        # Copiar sensores a la carpeta export
+        sensores = ["Temp_Sensor.png", "Sensor.png", "C02_Sensor.png", "Humidity_Sensor.png"]
+        for sensor in sensores:
+            origen = os.path.join(RUTA_SENSORES, sensor)
+            if os.path.exists(origen):
+                shutil.copy2(origen, os.path.join(carpeta_export, sensor))
+
+        messagebox.showinfo("Exportación completa", f"Exportación realizada en:\n{carpeta_export}")
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Error en la exportación:\n{e}")
+
+
+
+#######################################################################
 # GUI
 root = tk.Tk()
 root.title("Importar capas desde plantilla.psd")
@@ -212,6 +489,7 @@ tk.Button(root, text="Crear grupo 'Floor Section' con HVAC y ARCH", command=crea
 # Botón para importar imágenes
 tk.Button(root, text="Importar imágenes como capas", command=importar_imagenes_como_capas).pack(padx=20, pady=5)
 
+
 # Menús desplegables por categoría
 for categoria, capas in capas_por_categoria.items():
     contenedor = tk.Frame(root)
@@ -238,5 +516,27 @@ for categoria, capas in capas_por_categoria.items():
     for capa_nombre, brush_name in capas.items():
         btn = tk.Button(botones_frame, text=capa_nombre, command=lambda cn=capa_nombre, bn=brush_name: duplicar_capa_y_brush(cn, bn))
         btn.pack(anchor="w", padx=20, pady=2)
+
+#Boton para exportar a HTML
+# Crear un frame para los botones de exportación
+export_frame = tk.Frame(root)  
+export_frame.pack(padx=20, pady=(5, 10))
+
+tk.Button(export_frame, text="Exportar SC", 
+          command=lambda: exportar_completo("SC", True)).pack(side="left", padx=5)
+
+tk.Button(export_frame, text="Exportar ES", 
+          command=lambda: exportar_completo("ES", True)).pack(side="left", padx=5)
+
+tk.Button(root, text="Isolate", command=exportar_isolate_folder).pack(padx=20, pady=5)
+
+
+#ESTETICA HERRAMIENTA
+root.configure(bg="#2c3e50")
+root.option_add("*Font", "Helvetica 12")
+root.option_add("*Button*highlightBackground", "#2c3e50")
+root.option_add("*Button*highlightColor", "#2980b9")
+
+
 
 root.mainloop()

@@ -133,25 +133,31 @@ def duplicar_capa_y_brush(nombre_capa, brush_name):
 
 def crear_floor_section():
     try:
+        # Conectar a Photoshop
         psApp = win32com.client.Dispatch("Photoshop.Application")
         psApp.Visible = True
 
         if psApp.Documents.Count == 0:
-            messagebox.showerror("Error", "Abre o crea un documento para insertar grupos.")
+            messagebox.showerror("Error", "Abre o crea un documento en Photoshop antes de continuar.")
             return
 
+        # Código JSX para crear los grupos
         jsx_code = """
         var doc = app.activeDocument;
         var mainGroup = doc.layerSets.add();
         mainGroup.name = "Floor Section";
 
+        var archGroup = mainGroup.layerSets.add();
+        archGroup.name = "ARCH";
+
         var hvacGroup = mainGroup.layerSets.add();
         hvacGroup.name = "HVAC";
 
-        var archGroup = mainGroup.layerSets.add();
-        archGroup.name = "ARCH";
+        
         """
         psApp.DoJavaScript(jsx_code)
+
+        messagebox.showinfo("Éxito", "Se creó el grupo 'Floor Section' con subgrupos 'HVAC' y 'ARCH'.")
 
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo crear los grupos:\n{e}")

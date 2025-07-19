@@ -361,12 +361,12 @@ def exportar_completo(tipo_html="SC", exportar_html=True):
 ###########################################################################
 #exportacion isolate
 ##$###########################################################################
-def exportar_isolate_folder():
+def exportar_isolate_folder(tipo_html="SC"):
     try:
         psApp = win32com.client.Dispatch("Photoshop.Application")
 
         if psApp.Documents.Count == 0:
-            messagebox.showerror("Error", "No hay documento abierto.")
+            messagebox.showerror("Error", "No hay documentos abiertos.")
             return
 
         doc = psApp.ActiveDocument
@@ -376,22 +376,27 @@ def exportar_isolate_folder():
 
         ruta_psd = doc.FullName
         carpeta_base = os.path.dirname(ruta_psd)
-        carpeta_floorplans = os.path.join(carpeta_base, "floorplans")
-        os.makedirs(carpeta_floorplans, exist_ok=True)
-
-        nombre_default = os.path.splitext(os.path.basename(ruta_psd))[0]
+        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Pedir nombre de exportación
-        root = tk.Tk()
-        root.withdraw()
+        root_tmp = tk.Tk()
+        root_tmp.withdraw()
         nombre_export = simpledialog.askstring(
-            "Nombre de exportación (solo carpeta)",
-            f"Ingrese el nombre para la carpeta (vacío usa '{nombre_default}'):"
+            "Nombre de exportación",
+            f"Ingrese nombre para exportar (modo {tipo_html}):"
         )
-        if nombre_export is None:
-            return
-        nombre_export = nombre_export.strip() or nombre_default
+        root_tmp.destroy()
 
+        if not nombre_export:
+            messagebox.showwarning("Cancelado", "Exportación cancelada por el usuario.")
+            return
+        nombre_export = nombre_export.strip()
+
+        # Carpeta base para exportar (similar a exportar_completo)
+        nombre_carpeta_base = f"floorplans_{tipo_html}"
+        carpeta_floorplans = os.path.join(carpeta_base, nombre_carpeta_base)
+
+        # Crear carpeta de exportación
         carpeta_export = os.path.join(carpeta_floorplans, nombre_export)
         os.makedirs(carpeta_export, exist_ok=True)
 
@@ -401,60 +406,68 @@ def exportar_isolate_folder():
         options.Transparency = True
         options.Quality = 100
 
-        # Exportar TODO visible (sin esconder nada, no usar grupos)
-        # O si quieres exportar solo un grupo específico, pregunta aquí
+        # Ruta PNG
+        ruta_png = os.path.join(carpeta_export, f"{nombre_export}.png")
 
-        # Por ejemplo, vamos a exportar solo las capas visibles (sin cambiar visibilidad de grupos)
-        nombre_imagen = f"{nombre_export}.png"
-        ruta_imagen = os.path.join(carpeta_export, nombre_imagen)
+        # Exportar la vista actual (sin tocar visibilidad)
+        doc.Export(ExportIn=ruta_png, ExportAs=2, Options=options)
 
-        doc.Export(ExportIn=ruta_imagen, ExportAs=2, Options=options)
-
-        # Crear HTML simple con la imagen exportada
-        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        html_file = os.path.join(carpeta_export, f"{nombre_export}.html")
-
-        sensores_html = """
-        <img class="sensor" src="Temp_Sensor.png" style="top:203px;left:33px;"/>
-        <img class="sensor" src="Sensor.png" style="top:179px;left:33px;z-index:101;"/>
-        <img class="sensor" src="C02_Sensor.png" style="top:254px;left:33px;z-index:102;"/>
-        <img class="sensor" src="Humidity_Sensor.png" style="top:227px;left:33px;z-index:103;"/>
-        """
-
-        html_content = f"""<!DOCTYPE html>
+        # Función para crear el HTML con sensores
+        def crear_html(ruta_destino, nombre_imagen):
+            sensores_html = """
+            <img class="sensor" src="Temp_Sensor.png" style="top:203px;left:33px;"/>
+            <img class="sensor" src="Sensor.png" style="top:179px;left:33px;z-index:101;"/>
+            <img class="sensor" src="C02_Sensor.png" style="top:254px;left:33px;z-index:102;"/>
+            <img class="sensor" src="Humidity_Sensor.png" style="top:227px;left:33px;z-index:103;"/>
+            """
+            nav_overlay = '<div class="nav-overlay">[ES Navigation Controls]</div>' if tipo_html == "ES" else ""
+            html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>{nombre_export}</title>
+    <title>{nombre_export} - {tipo_html}</title>
+    <meta name="CGFVersion" content="4.0"/>
+    <meta name="Description" content="Exported Graphic"/>
+    <meta name="Template" content="false"/>
     <meta name="CreationTime" content="{fecha_actual}"/>
+    <meta name="ModificationTime" content="{fecha_actual}"/>
+    <meta name="{tipo_html}Version" content=""/>
+    <meta name="TGEVersion" content="Centralized Services Graphics"/>
+    <meta name="ScrollLength" content="788"/>
+    <meta name="ScrollWidth" content="1613"/>
     <style>
         body {{ margin: 0; padding: 0; background-color: #333; overflow: hidden; }}
         .hvac-container {{ position: relative; height: 788px; width: 1613px; }}
         .hvac-main {{ position: absolute; top: 0; left: 0; z-index: 12; }}
         .sensor {{ position: absolute; height: 22px; width: 22px; z-index: 100; }}
+        .nav-overlay {{ position: absolute; top: 10px; right: 10px; z-index: 200; }}
     </style>
 </head>
 <body>
     <div class="hvac-container">
-        <img class="hvac-main" src="{nombre_imagen}" alt="Imagen exportada"/>
+        <img class="hvac-main" src="{nombre_imagen}" alt="HVAC System"/>
         {sensores_html}
+        {nav_overlay}
     </div>
 </body>
-</html>
-"""
-        with open(html_file, 'w', encoding='utf-8') as f:
-            f.write(html_content)
+</html>"""
+            with open(os.path.join(ruta_destino, f"{nombre_export}_{tipo_html}.html"), "w", encoding="utf-8") as f:
+                f.write(html)
 
-        # Copiar sensores a la carpeta export
+        # Copiar sensores
         sensores = ["Temp_Sensor.png", "Sensor.png", "C02_Sensor.png", "Humidity_Sensor.png"]
         for sensor in sensores:
             origen = os.path.join(RUTA_SENSORES, sensor)
             if os.path.exists(origen):
                 shutil.copy2(origen, os.path.join(carpeta_export, sensor))
 
-        messagebox.showinfo("Exportación completa", f"Exportación realizada en:\n{carpeta_export}")
+        # Crear el archivo HTML
+        crear_html(carpeta_export, os.path.basename(ruta_png))
+
+        messagebox.showinfo("Exportación finalizada",
+            f"Exportación isolate completa en:\n{carpeta_export}")
 
     except Exception as e:
-        messagebox.showerror("Error", f"Error en la exportación:\n{e}")
+        messagebox.showerror("Error", f"Error durante la exportación isolate:\n{str(e)}")
 
 
 
@@ -534,7 +547,13 @@ tk.Button(export_frame, text="Exportar SC",
 tk.Button(export_frame, text="Exportar ES", 
           command=lambda: exportar_completo("ES", True)).pack(side="left", padx=5)
 
-tk.Button(root, text="Isolate", command=exportar_isolate_folder).pack(padx=20, pady=5)
+
+# Frame para botones Isolate
+isolate_frame = tk.Frame(root)
+isolate_frame.pack(padx=20, pady=5)
+
+tk.Button(isolate_frame, text="Isolate SC", command=lambda: exportar_isolate_folder("SC")).pack(side="left", padx=5)
+tk.Button(isolate_frame, text="Isolate ES", command=lambda: exportar_isolate_folder("ES")).pack(side="left", padx=5)
 
 
 #ESTETICA HERRAMIENTA
